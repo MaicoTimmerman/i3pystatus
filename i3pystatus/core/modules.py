@@ -25,6 +25,8 @@ class Module(SettingsBase):
     def on_click(self, button):
         if button == 1:  # Left mouse button
             self.on_leftclick()
+        elif button == 2:  # Scroll click
+            self.on_scrollclick()
         elif button == 3:  # Right mouse button
             self.on_rightclick()
         elif button == 4: # mouse wheel up
@@ -40,6 +42,9 @@ class Module(SettingsBase):
         pass
 
     def on_rightclick(self):
+        pass
+
+    def on_scrollclick(self):
         pass
 
     def on_upscroll(self):
