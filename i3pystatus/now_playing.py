@@ -8,38 +8,49 @@ from i3pystatus import IntervalModule, formatp
 from i3pystatus.core.util import TimeWrapper
 
 
+class NoPlayerException(Exception):
+    pass
+
+
 class NowPlaying(IntervalModule):
     """
     Shows currently playing track information, supports most media players
 
-    Available formatters (uses `formatp`_)
+    * Requires python-dbus available from every distros' package manager.
+
+    Left click on the module play/pauses, right click goes to the next track.
+
+    .. rubric:: Available formatters (uses :ref:`formatp`)
 
     * `{title}` — (the title of the current song)
     * `{album}` — (the album of the current song, can be an empty string (e.g. for online streams))
     * `{artist}` — (can be empty, too)
     * `{filename}` — (file name with out extension and path; empty unless title is empty)
-    * `{song_elapsed}` — (Position in the currently playing song, uses `TimeWrapper`_, default is `%m:%S`)
-    * `{song_length}` — (Length of the current song, same as song_elapsed)
+    * `{song_elapsed}` — (position in the currently playing song, uses :ref:`TimeWrapper`, default is `%m:%S`)
+    * `{song_length}` — (length of the current song, same as song_elapsed)
     * `{status}` — (play, pause, stop mapped through the `status` dictionary)
-    * `{volume}` — (Volume)
-
-    Left click on the module play/pauses, right click goes to the next track.
-
-    Requires python-dbus available from every distros' package manager.
+    * `{volume}` — (volume)
     """
 
     interval = 1
 
     settings = (
-        ("player", "Player name"),
+        ("player", "Player name. If not set, compatible players will be \
+                    detected automatically."),
         ("status", "Dictionary mapping pause, play and stop to output text"),
-        ("color", "Text color"),
         ("format", "formatp string"),
-
+        ("color", "Text color"),
+        ("format_no_player", "Text to show if no player is detected"),
+        ("color_no_player", "Text color when no player is detected"),
+        ("hide_no_player", "Hide output if no player is detected"),
     )
 
-    player = None
+    hide_no_player = True
+    format_no_player = "No Player"
+    color_no_player = "#ffffff"
+
     format = "{title} {status}"
+    color = "#ffffff"
     status = {
         "pause": "▷",
         "play": "▶",
@@ -50,7 +61,11 @@ class NowPlaying(IntervalModule):
         "Paused": "pause",
         "Stopped": "stop",
     }
-    color = "#FFFFFF"
+
+    on_leftclick = "playpause"
+    on_rightclick = "next_song"
+
+    player = None
     old_player = None
 
     def find_player(self):
@@ -58,56 +73,83 @@ class NowPlaying(IntervalModule):
         if self.old_player in players:
             return self.old_player
         if not players:
-            raise dbus.exceptions.DBusException()
+            raise NoPlayerException()
         self.old_player = players[0]
         return players[0]
 
     def get_player(self):
         if self.player:
             player = "org.mpris.MediaPlayer2." + self.player
+            try:
+                return dbus.SessionBus().get_object(player, "/org/mpris/MediaPlayer2")
+            except dbus.exceptions.DBusException:
+                raise NoPlayerException()
         else:
             player = self.find_player()
-        return dbus.SessionBus().get_object(player, "/org/mpris/MediaPlayer2")
+            return dbus.SessionBus().get_object(player, "/org/mpris/MediaPlayer2")
 
     def run(self):
         try:
             player = self.get_player()
-        except dbus.exceptions.DBusException:
-            self.output = {
-                "full_text": "now_playing: d-bus error",
-                "color": "#ff0000",
+            properties = dbus.Interface(player, "org.freedesktop.DBus.Properties")
+            get_prop = functools.partial(properties.Get, "org.mpris.MediaPlayer2.Player")
+            currentsong = get_prop("Metadata")
+
+            fdict = {
+                "status": self.status[self.statusmap[get_prop("PlaybackStatus")]],
+                "len": 0,  # TODO: Use optional(!) TrackList interface for this to gain 100 % mpd<->now_playing compat
+                "pos": 0,
+                "volume": int(get_prop("Volume") * 100),
+
+                "title": currentsong.get("xesam:title", ""),
+                "album": currentsong.get("xesam:album", ""),
+                "artist": ", ".join(currentsong.get("xesam:artist", "")),
+                "song_length": TimeWrapper((currentsong.get("mpris:length") or 0) / 1000 ** 2),
+                "song_elapsed": TimeWrapper((get_prop("Position") or 0) / 1000 ** 2),
+                "filename": "",
             }
+
+            if not fdict["title"]:
+                fdict["filename"] = '.'.join(
+                    basename((currentsong.get("xesam:url") or "")).split('.')[:-1])
+
+            self.output = {
+                "full_text": formatp(self.format, **fdict).strip(),
+                "color": self.color,
+            }
+
+        except NoPlayerException:
+            if self.hide_no_player:
+                self.output = None
+            else:
+                self.output = {
+                    "full_text": self.format_no_player,
+                    "color": self.color_no_player,
+                }
             return
 
-        properties = dbus.Interface(player, "org.freedesktop.DBus.Properties")
-        get_prop = functools.partial(properties.Get, "org.mpris.MediaPlayer2.Player")
-        currentsong = get_prop("Metadata")
+        except dbus.exceptions.DBusException as e:
+            if self.hide_no_player:
+                self.output = None
+            else:
+                self.output = {
+                    "full_text": "DBus error: " + e.get_dbus_message(),
+                    "color": "#ff0000",
+                }
+            return
 
-        fdict = {
-            "status": self.status[self.statusmap[get_prop("PlaybackStatus")]],
-            "len": 0, # TODO: Use optional(!) TrackList interface for this to gain 100 % mpd<->now_playing compat
-            "pos": 0,
-            "volume": int(get_prop("Volume") * 100),
+    def playpause(self):
+        try:
+            dbus.Interface(self.get_player(), "org.mpris.MediaPlayer2.Player").PlayPause()
+        except NoPlayerException:
+            return
+        except dbus.exceptions.DBusException:
+            return
 
-            "title":currentsong.get("xesam:title", ""),
-            "album": currentsong.get("xesam:album", ""),
-            "artist": ", ".join(currentsong.get("xesam:artist", "")),
-            "song_length": TimeWrapper((currentsong.get("mpris:length") or 0) / 1000**2),
-            "song_elapsed": TimeWrapper((get_prop("Position") or 0) / 1000**2),
-            "filename": "",
-        }
-
-        if not fdict["title"]:
-            fdict["filename"] = '.'.join(
-                basename((currentsong.get("xesam:url") or "")).split('.')[:-1])
-
-        self.output = {
-            "full_text": formatp(self.format, **fdict).strip(),
-            "color": self.color,
-        }
-
-    def on_leftclick(self):
-        self.get_player().PlayPause()
-
-    def on_rightclick(self):
-        self.get_player().Next()
+    def next_song(self):
+        try:
+            dbus.Interface(self.get_player(), "org.mpris.MediaPlayer2.Player").Next()
+        except NoPlayerException:
+            return
+        except dbus.exceptions.DBusException:
+            return

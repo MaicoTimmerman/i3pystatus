@@ -18,17 +18,18 @@ class CpuUsage(IntervalModule):
 
     Linux only
 
-    Available formatters:
+    .. rubric:: Available formatters
 
-    * {usage}       usage average of all cores
-    * {usage_cpu*}  usage of one specific core. replace "*" by core number starting at 0
-    * {usage_all}   usage of all cores separate. usess natsort when available(relevant for more than 10 cores)
+    * `{usage}`      — usage average of all cores
+    * `{usage_cpu*}` — usage of one specific core. replace "*" by core number starting at 0
+    * `{usage_all}`  — usage of all cores separate. usess natsort when available(relevant for more than 10 cores)
 
     """
 
     format = "{usage:02}%"
     format_all = "{core}:{usage:02}%"
     exclude_average = False
+    interval = 1
     settings = (
         ("format", "format string."),
         ("format_all", ("format string used for {usage_all} per core. "
@@ -40,7 +41,6 @@ class CpuUsage(IntervalModule):
     def init(self):
         self.prev_total = defaultdict(int)
         self.prev_busy = defaultdict(int)
-        self.interval = 1
         self.formatter = Formatter()
 
     def get_cpu_timings(self):
@@ -67,7 +67,10 @@ class CpuUsage(IntervalModule):
         self.prev_total[cpu] = total
         self.prev_busy[cpu] = busy
 
-        return int(diff_busy / diff_total * 100)
+        if diff_total == 0:
+            return 0
+        else:
+            return int(diff_busy / diff_total * 100)
 
     def gen_format_all(self, usage):
         """

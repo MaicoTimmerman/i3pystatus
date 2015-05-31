@@ -9,7 +9,7 @@ class ALSA(IntervalModule):
 
     Requires pyalsaaudio
 
-    Available formatters:
+    .. rubric:: Available formatters
 
     * `{volume}` — the current volume in percent
     * `{muted}` — the value of one of the `muted` or `unmuted` settings
@@ -45,6 +45,11 @@ class ALSA(IntervalModule):
 
     alsamixer = None
     has_mute = True
+
+    on_upscroll = "increase_volume"
+    on_downscroll = "decrease_volume"
+    on_leftclick = "switch_mute"
+    on_rightclick = on_leftclick
 
     def init(self):
         self.create_mixer()
@@ -82,18 +87,15 @@ class ALSA(IntervalModule):
             "color": self.color_muted if muted else self.color,
         }
 
-    def on_leftclick(self):
-        self.on_rightclick()
-
-    def on_rightclick(self):
+    def switch_mute(self):
         if self.has_mute:
             muted = self.alsamixer.getmute()[self.channel]
             self.alsamixer.setmute(not muted)
 
-    def on_upscroll(self):
+    def increase_volume(self, delta=None):
         vol = self.alsamixer.getvolume()[self.channel]
-        self.alsamixer.setvolume(min(100, vol + self.increment))
+        self.alsamixer.setvolume(min(100, vol + (delta if delta else self.increment)))
 
-    def on_downscroll(self):
+    def decrease_volume(self, delta=None):
         vol = self.alsamixer.getvolume()[self.channel]
-        self.alsamixer.setvolume(max(0, vol - self.increment))
+        self.alsamixer.setvolume(max(0, vol - (delta if delta else self.increment)))

@@ -139,7 +139,7 @@ class ParcelTracker(IntervalModule):
     - parcel.DHL("<id_code>")
     - parcel.Itella("<id_code>"[, "en"|"fi"|"sv"])
       Second parameter is language. Requires beautiful soup 4 (bs4)
-    
+
     Requires lxml and cssselect.
     """
 
@@ -153,6 +153,7 @@ class ParcelTracker(IntervalModule):
     required = ("instance",)
 
     format = "{name}:{progress}"
+    on_leftclick = "open_browser"
 
     @require(internet)
     def run(self):
@@ -166,5 +167,5 @@ class ParcelTracker(IntervalModule):
             "instance": self.name,
         }
 
-    def on_leftclick(self):
+    def open_browser(self):
         webbrowser.open_new_tab(self.instance.get_url())

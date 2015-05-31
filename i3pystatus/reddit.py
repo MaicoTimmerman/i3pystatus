@@ -7,15 +7,14 @@ import praw
 
 
 class Reddit(IntervalModule):
-
     """
     This module fetches and displays posts and/or user mail/messages from
     reddit.com. Left-clicking on the display text opens the permalink/comments
-    page using webbrowser.open() while right-clicking opens the URL of the 
+    page using webbrowser.open() while right-clicking opens the URL of the
     submission directly. Depends on the Python Reddit API Wrapper (PRAW)
     <https://github.com/praw-dev/praw>.
-    
-    Available formatters:
+
+    .. rubric:: Available formatters
 
     * {submission_title}
     * {submission_author}
@@ -36,6 +35,7 @@ class Reddit(IntervalModule):
         ("format", "Format string used for output."),
         ("username", "Reddit username."),
         ("password", "Reddit password."),
+        ('keyring_backend', 'alternative keyring backend for retrieving credentials'),
         ("subreddit", "Subreddit to monitor. Uses frontpage if unspecified."),
         ("sort_by", "'hot', 'new', 'rising', 'controversial', or 'top'."),
         ("color", "Standard color."),
@@ -49,6 +49,7 @@ class Reddit(IntervalModule):
     format = "[{submission_subreddit}] {submission_title} ({submission_domain})"
     username = ""
     password = ""
+    keyring_backend = None
     subreddit = ""
     sort_by = "hot"
     color = "#FFFFFF"
@@ -62,13 +63,15 @@ class Reddit(IntervalModule):
         "no_mail": "",
     }
 
+    on_leftclick = "open_permalink"
+
     _permalink = ""
     _url = ""
 
     @require(internet)
     def run(self):
         r = praw.Reddit(user_agent='i3pystatus')
-        
+
         if self.password:
             r.login(self.username, self.password)
             unread_messages = sum(1 for i in r.get_unread())
@@ -113,7 +116,7 @@ class Reddit(IntervalModule):
         fdict["submission_url"] = d["url"]
         fdict["submission_domain"] = d["domain"]
         fdict["submission_subreddit"] = d["subreddit"]
-        
+
         self._permalink = fdict["submission_permalink"]
         self._url = fdict["submission_url"]
 
@@ -125,7 +128,7 @@ class Reddit(IntervalModule):
             color = self.color
 
         if len(fdict["submission_title"]) > self.title_maxlen:
-            title = fdict["submission_title"][:(self.title_maxlen-3)]+"..."
+            title = fdict["submission_title"][:(self.title_maxlen - 3)] + "..."
             fdict["submission_title"] = title
 
         full_text = self.format.format(**fdict)
@@ -134,8 +137,11 @@ class Reddit(IntervalModule):
             "color": color,
         }
 
-    def on_leftclick(self):
+    def open_mail(self):
+        user_open('https://www.reddit.com/message/unread/')
+
+    def open_permalink(self):
         user_open(self._permalink)
-    
-    def on_rightclick(self):
+
+    def open_link(self):
         user_open(self._url)

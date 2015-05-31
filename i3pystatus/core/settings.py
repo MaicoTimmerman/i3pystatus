@@ -1,5 +1,8 @@
 from i3pystatus.core.util import KeyConstraintDict
 from i3pystatus.core.exceptions import ConfigKeyError, ConfigMissingError
+import inspect
+import logging
+import getpass
 
 
 class SettingsBase:
@@ -15,15 +18,24 @@ class SettingsBase:
     Settings are stored as attributes of self.
     """
 
-    settings = tuple()
+    __PROTECTED_SETTINGS = ["password", "email", "username"]
+
+    settings = (
+        ("log_level", "Set to true to log error to .i3pystatus-<pid> file"),
+    )
+
     """settings should be tuple containing two types of elements:
 
     * bare strings, which must be valid Python identifiers.
-    * two-tuples, the first element being a identifier (as above) and the second
-      a docstring for the particular setting"""
+    * two-tuples, the first element being a identifier (as above) and the second a docstring for the particular setting
+
+    """
 
     required = tuple()
     """required can list settings which are required"""
+
+    log_level = logging.NOTSET
+    logger = None
 
     def __init__(self, *args, **kwargs):
         def get_argument_dict(args, kwargs):
@@ -33,10 +45,25 @@ class SettingsBase:
                 return args[0]
             return kwargs
 
-        self.settings = self.flatten_settings(self.settings)
+        def merge_with_parents_settings():
+            settings = tuple()
+            # getmro returns base classes according to Method Resolution Order
+            for cls in inspect.getmro(self.__class__):
+                if hasattr(cls, "settings"):
+                    settings = settings + cls.settings
+            return settings
 
-        sm = KeyConstraintDict(self.settings, self.required)
+        self.__name__ = "{}.{}".format(
+            self.__module__, self.__class__.__name__)
+
+        settings = merge_with_parents_settings()
+        settings = self.flatten_settings(settings)
+
+        sm = KeyConstraintDict(settings, self.required)
         settings_source = get_argument_dict(args, kwargs)
+
+        protected = self.get_protected_settings(settings_source)
+        settings_source.update(protected)
 
         try:
             sm.update(settings_source)
@@ -49,10 +76,47 @@ class SettingsBase:
             raise ConfigMissingError(
                 type(self).__name__, missing=exc.keys) from exc
 
-        self.__name__ = "{}.{}".format(
-            self.__module__, self.__class__.__name__)
-
+        self.logger = logging.getLogger(self.__name__)
+        self.logger.setLevel(self.log_level)
         self.init()
+
+    def get_protected_settings(self, settings_source):
+        """
+        Attempt to retrieve protected settings from keyring if they are not already set.
+        """
+        user_backend = settings_source.get('keyring_backend')
+        found_settings = dict()
+        for setting_name in self.__PROTECTED_SETTINGS:
+                # Nothing to do if the setting is already defined.
+                if settings_source.get(setting_name):
+                    continue
+
+                setting = None
+                identifier = "%s.%s" % (self.__name__, setting_name)
+                if hasattr(self, 'required') and setting_name in getattr(self, 'required'):
+                    setting = self.get_setting_from_keyring(identifier, user_backend)
+                elif hasattr(self, setting_name):
+                    setting = self.get_setting_from_keyring(identifier, user_backend)
+                if setting:
+                    found_settings.update({setting_name: setting})
+        return found_settings
+
+    def get_setting_from_keyring(self, setting_identifier, keyring_backend=None):
+        """
+        Retrieves a protected setting from keyring
+        :param setting_identifier: must be in the format package.module.Class.setting
+        """
+        # If a custom keyring backend has been defined, use it.
+        if keyring_backend:
+            return keyring_backend.get_password(setting_identifier, getpass.getuser())
+
+        # Otherwise try and use default keyring.
+        try:
+            import keyring
+        except ImportError:
+            pass
+        else:
+            return keyring.get_password(setting_identifier, getpass.getuser())
 
     def init(self):
         """Convenience method which is called after all settings are set

@@ -12,15 +12,15 @@ class pyLoad(IntervalModule):
     """
     Shows pyLoad status
 
-    Available formatters:
+    .. rubric:: Available formatters
 
-    * `{captcha}` (see captcha_true and captcha_false, which are the values filled in for this formatter)
-    * `{progress}` (average over all running downloads)
-    * `{progress_all}` (percentage of completed files/links in queue)
-    * `{speed}` (kilobytes/s)
-    * `{download}` (downloads enabled, also see download_true and download_false)
-    * `{total}` (number of downloads)
-    * `{free_space}` (free space in download directory in gigabytes)
+    * `{captcha}` — see captcha_true and captcha_false, which are the values filled in for this formatter
+    * `{progress}` — average over all running downloads
+    * `{progress_all}` — percentage of completed files/links in queue
+    * `{speed}` — kilobytes/s
+    * `{download}` — downloads enabled, also see download_true and download_false
+    * `{total}` — number of downloads
+    * `{free_space}` — free space in download directory in gigabytes
     """
     interval = 5
 
@@ -29,9 +29,11 @@ class pyLoad(IntervalModule):
         "format",
         "captcha_true", "captcha_false",
         "download_true", "download_false",
-        "username", "password"
+        "username", "password",
+        ('keyring_backend', 'alternative keyring backend for retrieving credentials'),
     )
     required = ("username", "password")
+    keyring_backend = None
 
     address = "http://127.0.0.1:8000"
     format = "{captcha} {progress_all:.1f}% {speed:.1f} kb/s"
@@ -39,6 +41,7 @@ class pyLoad(IntervalModule):
     captcha_false = ""
     download_true = "Downloads enabled"
     download_false = "Downloads disabled"
+    on_leftclick = "open_webbrowser"
 
     def _rpc_call(self, method, data=None):
         if not data:
@@ -83,5 +86,5 @@ class pyLoad(IntervalModule):
             "instance": self.address,
         }
 
-    def on_leftclick(self):
+    def open_webbrowser(self):
         webbrowser.open_new_tab(self.address)
